@@ -86,33 +86,21 @@ struct ContentView: View {
     }
     
     func solveTSP(distances: [[Double]]) -> (length: Double, path: [Int]) {
+        
         let numCities = distances.count
         
-        // Define the bitmask to represent the set of visited cities
-        typealias VisitedSet = UInt16
-        
-        // Function to check if a city is visited or not
-        func isVisited(city: Int, visitedSet: VisitedSet) -> Bool {
-            return (visitedSet & (1 << city)) != 0
-        }
-        
-        // Function to mark a city as visited
-        func markVisited(city: Int, visitedSet: VisitedSet) -> VisitedSet {
-            return visitedSet | (1 << city)
-        }
-        
         // Initialize memoization table
-        var memo = [[Double?]](repeating: [Double?](repeating: nil, count: 1 << numCities), count: numCities)
+        var memo = [Int: [Set<Int>: Double]]()
         
         // Function to solve TSP using Dynamic Programming
-        func solveTSP(currentCity: Int, visitedSet: VisitedSet) -> (length: Double, path: [Int]) {
+        func solveTSP(currentCity: Int, visitedCities: Set<Int>) -> (length: Double, path: [Int]) {
             // If all cities have been visited, return the distance to return to the starting city
-            if visitedSet == ((1 << numCities) - 1) {
+            if visitedCities.count == numCities {
                 return (distances[currentCity][0], [currentCity, 0])
             }
             
             // If the result for the current city and visited set is already memoized, return it
-            if let result = memo[currentCity][Int(visitedSet)] {
+            if let result = memo[currentCity]?[visitedCities] {
                 return (result, [])
             }
             
@@ -123,15 +111,15 @@ struct ContentView: View {
             // Iterate through all cities
             for nextCity in 0..<numCities {
                 // If the next city has not been visited yet
-                if !isVisited(city: nextCity, visitedSet: visitedSet) {
+                if !visitedCities.contains(nextCity) {
                     // Calculate the distance from the current city to the next city
                     let distanceToNextCity = distances[currentCity][nextCity]
                     
-                    // Mark the next city as visited
-                    let updatedVisitedSet = markVisited(city: nextCity, visitedSet: visitedSet)
+                    // Update the visited set by adding the next city
+                    let updatedVisitedCities = visitedCities.union([nextCity])
                     
                     // Recursive call to solve TSP starting from the next city
-                    let (distance, path) = solveTSP(currentCity: nextCity, visitedSet: updatedVisitedSet)
+                    let (distance, path) = solveTSP(currentCity: nextCity, visitedCities: updatedVisitedCities)
                     
                     // Update the minimum distance and path
                     if distanceToNextCity + distance < minDistance {
@@ -142,13 +130,16 @@ struct ContentView: View {
             }
             
             // Memoize the result
-            memo[currentCity][Int(visitedSet)] = minDistance
+            if memo[currentCity] == nil {
+                memo[currentCity] = [:]
+            }
+            memo[currentCity]?[visitedCities] = minDistance
             
             return (minDistance, minPath)
         }
         
         // Start solving TSP from the starting city (city 0)
-        let (shortestPathLength, shortestPath) = solveTSP(currentCity: 0, visitedSet: 1)
+        let (shortestPathLength, shortestPath) = solveTSP(currentCity: 0, visitedCities: [0])
         return (shortestPathLength, shortestPath)
     }
     
