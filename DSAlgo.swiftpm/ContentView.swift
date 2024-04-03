@@ -4,7 +4,7 @@ import Combine
 struct ContentView: View {
     
     @State private var codes: String = "NAP,BUD,LIS,BER"
-    @State private var graph: [City] = []
+    @State private var inProgress = false
     @State private var message: String = ""
     @State private var cancellable: AnyCancellable?
     
@@ -17,22 +17,8 @@ struct ContentView: View {
                 .border(Color.gray, width: 1)
             
             Button(action: {
+                inProgress = true
                 self.fetchDestinations(codes: codes)
-//                let response: [City] = [
-//                    City(name: "NAP", destinations: [
-//                        Destination(name: "BUD", price: 26.95),
-//                        Destination(name: "LIS", price: 45.17)
-//                    ]),
-//                    City(name: "BUD", destinations: [
-//                        Destination(name: "NAP", price: 18.07),
-//                        Destination(name: "LIS", price: 55.76)
-//                    ]),
-//                    City(name: "LIS", destinations: [
-//                        Destination(name: "NAP", price: 53.35),
-//                        Destination(name: "BUD", price: 66.98)
-//                    ])
-//                ]
-//                tsp(graph: response)
             }) {
                 Text("Find optimal path")
                     .padding()
@@ -41,8 +27,12 @@ struct ContentView: View {
                     .cornerRadius(8)
             }
             
-            Text(message)
-                .foregroundColor(.gray)
+            if inProgress {
+                ProgressView("Please wait ...")
+            } else {
+                Text(message)
+                    .foregroundColor(.gray)
+            }
             
             Spacer()
         }.padding(24)
@@ -65,79 +55,34 @@ struct ContentView: View {
                     break
                 }
             }, receiveValue: { response in
-                tsp(graph: response)
+                findOptimalPath(graph: response)
             })
     }
     
-    func tsp(graph: [City]){
+    func findOptimalPath(graph: [City]){
         
-        let startingCity = "NAP"
-        
-//        let (shortestPathBruteForce, shortestDistanceBruteForce) = findShortestPathBruteForce(startingCity: startingCity, allCities: graph)
-//        print("\nShortest path (brute force): \(shortestPathBruteForce) with distance \(shortestDistanceBruteForce)")
-        
+//        let distances = [[0.0, 10.0, 15.0, 20.0], [5.0, 0.0, 9.0, 10.0], [6.0, 13.0, 0.0, 12.0], [8.0, 8.0, 9.0, 0]]
         var distances = [[Double]](repeating: [Double](repeating: Double.infinity, count: graph.count), count: graph.count)
         for (i, city) in graph.enumerated() {
+            distances[i][i] = 0.0
             for destination in city.destinations {
                 if let index = graph.firstIndex(where: { $0.name == destination.name }) {
                     distances[i][index] = destination.price
                 }
             }
         }
+        
         // Call the function to solve TSP and print the result
         let result = solveTSP(distances: distances)
         var message_to_show = ""
         for index in result.path {
-            message_to_show = message_to_show + " " + graph[index].name
+            message_to_show = message_to_show + " " + graph[index].name + " -> "
         }
-        message = message_to_show+": "+String(result.length)
+        message = message_to_show+String(result.length)
         print("Shortest path (dynamic programming): \(result.path) with distance \(result.length)")
         
+        inProgress = false
         
-    }
-    
-    // Function to calculate the total price of a path
-    func calculatePathPrice(path: [String], cities: [String: City]) -> Double {
-        var totalPrice = 0.0
-        for i in 0..<path.count - 1 {
-            let currentCity = cities[path[i]]!
-            let nextCity = cities[path[i + 1]]!
-            for destination in currentCity.destinations {
-                if destination.name == nextCity.name {
-                    totalPrice += destination.price
-                    break
-                }
-            }
-        }
-        return totalPrice
-    }
-    
-    // Brute force solution
-    func tspBruteForce(startingCity: String, currentCity: String, citiesLeft: Set<String>, currentPath: [String], currentDistance: Double, shortestPath: inout [String], shortestDistance: inout Double, allCities: [City]) {
-        if citiesLeft.isEmpty {
-            let distanceToStartingCity = allCities.first { $0.name == currentCity }!.destinations.first { $0.name == startingCity }!.price
-            let totalDistance = currentDistance + distanceToStartingCity
-            if totalDistance < shortestDistance {
-                shortestDistance = totalDistance
-                shortestPath = currentPath + [startingCity]
-            }
-        } else {
-            for city in citiesLeft {
-                let remainingCities = citiesLeft.subtracting([city])
-                let distanceToNextCity = allCities.first { $0.name == currentCity }!.destinations.first { $0.name == city }!.price
-                tspBruteForce(startingCity: startingCity, currentCity: city, citiesLeft: remainingCities, currentPath: currentPath + [city], currentDistance: currentDistance + distanceToNextCity, shortestPath: &shortestPath, shortestDistance: &shortestDistance, allCities: allCities)
-            }
-        }
-    }
-    
-    func findShortestPathBruteForce(startingCity: String, allCities: [City]) -> ([String], Double) {
-        var shortestPath = [String]()
-        var shortestDistance = Double.infinity
-        let citiesLeft = Set(allCities.map { $0.name }.filter { $0 != startingCity })
-        
-        tspBruteForce(startingCity: startingCity, currentCity: startingCity, citiesLeft: citiesLeft, currentPath: [], currentDistance: 0, shortestPath: &shortestPath, shortestDistance: &shortestDistance, allCities: allCities)
-        
-        return (shortestPath, shortestDistance)
     }
     
     func solveTSP(distances: [[Double]]) -> (length: Double, path: [Int]) {
