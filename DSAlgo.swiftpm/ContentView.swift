@@ -1,24 +1,60 @@
 import SwiftUI
 import Combine
+import MapKit
 
 struct ContentView: View {
     
-    @State private var codes: String = "NAP,BUD,LIS,BER"
+    @State private var airports = [Airport]()
+    @State private var line = [CLLocationCoordinate2D]()
+    @State private var airportsDict = [String: Airport]()
+    @State private var selectedAirportCodes = Array<String>()
+    @State private var selectedAirportNames: String = ""
+    @State private var prices = [String: Double]()
     @State private var inProgress = false
     @State private var message: String = ""
     @State private var cancellable: AnyCancellable?
     
     var body: some View {
         VStack {
+            MapView(annotations: airports.map { airport in
+                let annotation = MKPointAnnotation()
+                annotation.coordinate = CLLocationCoordinate2D(latitude: CLLocationDegrees(airport.latitude) ?? 0.0,
+                                                               longitude: CLLocationDegrees(airport.longitude) ?? 0.0)
+                annotation.title = airport.name
+                annotation.subtitle = airport.code
+                return annotation
+            }) { annotation in
+                let code = annotation.subtitle
+                if let index = selectedAirportCodes.firstIndex(of: code!) {
+                    selectedAirportCodes.remove(at: index)
+                } else {
+                    selectedAirportCodes.append(code!)
+                }
+                print(selectedAirportCodes)
+                var names = [String]()
+                for code in selectedAirportCodes {
+                    if let airport = airportsDict[code] {
+                        names.append(airport.name)
+                    }
+                }
+                selectedAirportNames = names.joined(separator: ", ")
+                print(selectedAirportNames)
+            }
+            .edgesIgnoringSafeArea(.all)
+            .onAppear {
+                fetchAirports()
+            }
             
-            TextField("Enter IATA codes for airports separated with comma", text: $codes)
+            TextField("Enter IATA codes for airports separated with comma", text: $selectedAirportNames)
                 .frame(maxWidth: .infinity)
                 .padding()
                 .border(Color.gray, width: 1)
             
             Button(action: {
-                inProgress = true
-                self.fetchDestinations(codes: codes)
+                if(selectedAirportCodes.count >= 2){
+                    inProgress = true
+                    self.fetchDestinations(codes: selectedAirportCodes.joined(separator: ","))
+                }
             }) {
                 Text("Find optimal path")
                     .padding()
@@ -34,11 +70,37 @@ struct ContentView: View {
                     .foregroundColor(.gray)
             }
             
-            Spacer()
         }.padding(24)
     }
     
+    private func fetchAirports() {
+        guard let url = URL(string: "https://api.cheapta.com/test/graph/airports") else {
+            print("Invalid URL")
+            return
+        }
+        inProgress = true
+        self.cancellable = URLSession.shared.dataTaskPublisher(for: url)
+            .map { $0.data }
+            .decode(type: [Airport].self, decoder: JSONDecoder())
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                case .failure(let error):
+                    print("Error: \(error)")
+                case .finished:
+                    break
+                }
+            }, receiveValue: { response in
+                airports = response
+                for airport in airports {
+                    airportsDict[airport.code]=airport
+                }
+                inProgress = false
+            })
+    }
+    
     private func fetchDestinations(codes: String) {
+        print("fetchDestinations: "+codes)
         guard let url = URL(string: "https://api.cheapta.com/test/graph/destinations?nodes="+codes) else {
             print("Invalid URL")
             return
@@ -55,6 +117,11 @@ struct ContentView: View {
                     break
                 }
             }, receiveValue: { response in
+                for origin in response {
+                    for destination in origin.destinations {
+                        prices[origin.name+destination.name]=destination.price
+                    }
+                }
                 findOptimalPath(graph: response)
             })
     }
@@ -73,13 +140,31 @@ struct ContentView: View {
         }
         
         // Call the function to solve TSP and print the result
+        print(distances)
         let result = solveTSP(distances: distances)
-        var message_to_show = ""
-        for index in result.path {
-            message_to_show = message_to_show + " " + graph[index].name + " -> "
+        
+        if result.length == Double.infinity {
+            message = "Could not find optimal path"
+        } else {
+            var message_to_show = ""
+            var previousAirportCode = String?(nil)
+            print(result.path)
+            for index in result.path {
+                let code = graph[index].name
+                print(code)
+                if previousAirportCode != nil {
+                    if let previousAirport = airportsDict[previousAirportCode!] {
+                        if let currentAirport = airportsDict[code] {
+                            message_to_show = message_to_show + "\n" + previousAirport.name + "-" + currentAirport.name + ": $"+String(prices[previousAirport.code+currentAirport.code]!)
+                        }
+                    }
+                }
+                previousAirportCode = code
+            }
+            message = message_to_show+"\nTotal: $"+String(format: "%.2f", result.length)
+            print("Shortest path (dynamic programming): \(result.path) with distance \(result.length)")
         }
-        message = message_to_show+String(result.length)
-        print("Shortest path (dynamic programming): \(result.path) with distance \(result.length)")
+        
         
         inProgress = false
         
